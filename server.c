@@ -174,21 +174,26 @@ packet_ *makePkt(char *buffer){
 			}
 			printf("opcode = %d\nfilename =%s\nmode=%s\n",opcode,pkt->read_req.filename,pkt->read_req.mode);
 		}
+		break;
 		case(TFTP_WRQ):{
 			
 		}
+		break;
 		case(TFTP_DATA):{
 
 		}
+		break;
 		case(TFTP_ACK):{
 			unsigned short int block_no;
 			memcpy(&block_no,buffer,sizeof(short));		//get opcode
 			block_no = ntohs(block_no);
 			pkt->ack.blockNumber=block_no;
 		}
+		break;
 		case(TFTP_ERR):{
 		
 		}
+		break;
 	}
 	return pkt;
 }
