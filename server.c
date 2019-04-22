@@ -8,7 +8,7 @@ int main(int argc, char *argv[]){
 	if (argc > 2 && argv[1][0] == '-' && argv[1][1] == 'p') {
 		port = atoi(argv[2]);
 	}
-	else if (argc != 2) {
+	else if (argc != 3) {
 		printf("Usage: %s [-p port]\n",argv[0]);
 		return 0;
 	}
@@ -17,26 +17,32 @@ int main(int argc, char *argv[]){
 	bzero((char*) &serv_addr, sizeof(serv_addr));
 
 
-	if((sockfd = socket(PF_INET, SOCK_DGRAM, 0)) < 0) {
+	if((sockfd = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
 		perror("socket creation");
 		exit(0);
 	}
 
 	serv_addr.sin_family = AF_INET;
-		serv_addr.sin_port = htons(port);
-
+	serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+	serv_addr.sin_port = htons(port);
+	printf("Running on port=%d\n",port);
 	if ( bind( sockfd, (struct sockaddr * ) &serv_addr, sizeof(serv_addr)) < 0) {
 		perror("bind");
 		exit(0);
 	}
 
-	int lfd = listen(sockfd, 20);
+	//no listen in udp sockets....make socket bind and send/recv
+
+	// int lfd = listen(sockfd, 20);	
+	// if(lfd==-1)
+	// 	perror("lfd:");
 
 	fd_set rset, allset;
-	int maxfd = lfd, connfd;
+	int maxfd = sockfd;
+	int connfd;
 	FD_ZERO (&allset);
-	FD_SET (lfd, &allset);
-    	Client_info clientHT[CLIENT_HT_SIZE];
+	FD_SET (sockfd, &allset);
+    Client_info clientHT[CLIENT_HT_SIZE];
 
 	for(int i=0;i<CLIENT_HT_SIZE;i++)
 		clientHT[i]=NULL;
@@ -45,53 +51,48 @@ int main(int argc, char *argv[]){
 
 	while(1) {
 		rset = allset;
+		printf("sockfd = %d\tmaxfd = %d\n",sockfd,maxfd);
 		int ready = select (maxfd + 1, &rset, NULL, NULL, NULL);
 		if(ready == -1) {
 			perror("select");
 			exit(0);
 		}
-		if (FD_ISSET (lfd, &rset)) {
+		if (FD_ISSET (sockfd, &rset)) {
 			struct sockaddr_in cliaddr;
 			int clilen = sizeof (cliaddr);
 			char buffer[MAX_BUF_SIZE];
+			memset(buffer,0,sizeof(buffer));
 			int recv_len = recvfrom(sockfd, buffer, MAX_BUF_SIZE, 0, (struct sockaddr *) &cliaddr, (socklen_t * ) &clilen);
+			
+			//******need to make one packet here itself and process the request...already got one (get request)
 
-			if((connfd = socket(PF_INET, SOCK_DGRAM, 0)) < 0) {
+
+			packet_ *pkt = makePkt(buffer);
+
+
+			if((connfd = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
 				perror("socket creation");
 				exit(0);
 			}
-
-			serv_addr.sin_port = htons(0);	//port number random
+			printf("Created new Socket\n");
+			serv_addr.sin_port = htons(0);	//port number random,rest all as before
 
 			if ( bind( connfd, (struct sockaddr * ) &serv_addr, sizeof(serv_addr)) < 0) {
 				perror("bind");
 				exit(0);
 			}
-
 			if (connfd > maxfd)
 				maxfd = connfd;
 			FD_SET (connfd, &allset);	//add confd to allset
 
 			insert(clientHT, connfd, NULL, &cliaddr);
-
+			//sendReply() for that packet from connfd**
 		}
 		for (int ifd = 0; ifd <= maxfd; ifd++) {
-			if(ifd == lfd)	//already handled
+			if(ifd == sockfd)	//already handled
 				continue;
-			processClient(clientHT,ifd);
-
-					// if ((n = read (sockfd, buf, MAXLINE)) == 0) {
-					// 	/*connection closed by client */
-					// 	close (sockfd);
-					// 	FD_CLR (sockfd, &allset);
-					// 	client[i] = -1;
-					// }
-					// else
-					// 	write (sockfd, buf, n);
-
-					// if (--nready <= 0)
-					// 	break;		/* no more readable descriptors */
-
+			if (FD_ISSET (ifd, &rset))			//if in readset
+				processClient(clientHT,ifd);	//read socket ,makePkt and send reply
 		}
 	}
 }
@@ -148,21 +149,69 @@ void delete(Client_info clientHT[], int fd) {
 	free(cinfo);
 }
 
+packet_ *makePkt(char *buffer){
+	packet_ *pkt = (packet_*)malloc(sizeof(packet_));
+	unsigned short int opcode;
+    memcpy(&opcode,buffer,sizeof(short));		//get opcode
+	opcode = ntohs(opcode);
+    pkt->opcode=opcode;
+	int readptr =2;	//already read 2 bytes
+	switch(pkt->opcode){
+		case(TFTP_RRQ):{		
+			memset(pkt->read_req.filename, '\0',MAX_STRING_SIZE+1);
+			memset(pkt->read_req.mode, '\0',MAX_MODE_SIZE+1);
+			int i;
+			for(i = readptr; i<MAX_BUF_SIZE; i++) {		//obtaining filename
+				if(buffer[i] == '\0')
+					break;
+				pkt->read_req.filename[i-readptr] = buffer[i];
+			}
+			readptr =i+1;
+			for(i = readptr; i<MAX_BUF_SIZE; i++) {		//obtaining mode
+				if(buffer[i] == '\0')
+					break;
+				pkt->read_req.mode[i-readptr] = buffer[i];
+			}
+			printf("opcode = %d\nfilename =%s\nmode=%s\n",opcode,pkt->read_req.filename,pkt->read_req.mode);
+		}
+		case(TFTP_WRQ):{
+			
+		}
+		case(TFTP_DATA):{
+
+		}
+		case(TFTP_ACK):{
+			unsigned short int block_no;
+			memcpy(&block_no,buffer,sizeof(short));		//get opcode
+			block_no = ntohs(block_no);
+			pkt->ack.blockNumber=block_no;
+		}
+		case(TFTP_ERR):{
+		
+		}
+	}
+	return pkt;
+}
 int processClient(Client_info clientHT[], int fd) {
 	char buffer[MAX_BUF_SIZE];
 	struct sockaddr_in cliaddr;
 	int clilen = sizeof(cliaddr);
-	int nread = recvfrom(fd, buffer, MAX_BUF_SIZE, 0 , (struct sockaddr *) &cliaddr, &clilen);
+	printf("fd  = %d\n",fd);
+	int nread = recvfrom(fd, buffer, MAX_BUF_SIZE, 0 , (struct sockaddr *) &cliaddr, &clilen);		//read from socket
 	if(nread < 0) {
 		perror("recvfrom");
 		return 0;
 	}
 	Client_info cinfo = lookup(clientHT,fd);
-
+	printf("fd  = %d\n",fd);
 	if(cinfo->cliaddr->sin_addr.s_addr != cliaddr.sin_addr.s_addr || cinfo->cliaddr->sin_port != cliaddr.sin_port){
 		printf("Received from different client on fd =%d",fd);
 		return 0;
 	}
+	packet_ *recvd_pkt = makePkt(buffer);	//make the packet
+	//sendReply(); based on the packet received
+	
+	/*	
 	char opcode[3];
 	strcpy(opcode, buffer);
 	opcode[2] = '\0';
@@ -171,6 +220,7 @@ int processClient(Client_info clientHT[], int fd) {
 	short int op;					//converts first 2 bytes of buffer to int-readable opcode
 	memcpy(&op, opcode, sizeof(short int));
 	op = ntohs(op);
+	printf("op=%d",op);
 	switch(op) {
 		case 1:		// RRQ
 		{
@@ -224,6 +274,7 @@ int processClient(Client_info clientHT[], int fd) {
 		}
 		break;
 	}
+	*/
 }
 
 void sendpkt(Client_info cinfo, packet_ * pkt) {
@@ -232,3 +283,7 @@ void sendpkt(Client_info cinfo, packet_ * pkt) {
 	// sprintf(buffer, "%2d%2d%s%c", pkt->opcode, pkt->error.errorCode, pkt->error.message, (char) 0);
 	int nread = sendto(cinfo->fd, buffer, MAX_BUF_SIZE, 0 , (struct sockaddr *) cinfo->cliaddr,sizeof(cinfo->cliaddr));
 }
+
+
+//takes as input a char* buffer and returns the equivalent packet structure
+

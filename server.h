@@ -70,7 +70,7 @@ typedef struct client_info_ {
 	FILE * fp;
 	packet_* last_pkt;
 	struct sockaddr_in * cliaddr;
-	struct client_info_ * next;
+	struct client_info_ * next; 
 } client_info;
 
 typedef client_info * Client_info;
@@ -82,3 +82,4 @@ void delete(Client_info clientHT[], int fd);
 Client_info create_client(int fd, FILE * fp, struct sockaddr_in * cliaddr);
 int processClient(Client_info clientHT[], int fd);
 void sendpkt(Client_info cinfo, packet_ * pkt);
+packet_ *makePkt(char *buffer);
