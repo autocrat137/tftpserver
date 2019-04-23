@@ -33,7 +33,7 @@ int main(int argc, char *argv[]){
 
 	//no listen in udp sockets....make socket bind and send/recv
 
-	// int lfd = listen(sockfd, 20);	
+	// int lfd = listen(sockfd, 20);
 	// if(lfd==-1)
 	// 	perror("lfd:");
 
@@ -63,7 +63,7 @@ int main(int argc, char *argv[]){
 			char buffer[MAX_BUF_SIZE];
 			memset(buffer,0,sizeof(buffer));
 			int recv_len = recvfrom(sockfd, buffer, MAX_BUF_SIZE, 0, (struct sockaddr *) &cliaddr, (socklen_t * ) &clilen);
-			
+
 			//******need to make one packet here itself and process the request...already got one (get request)
 
 
@@ -149,34 +149,39 @@ void delete(Client_info clientHT[], int fd) {
 	free(cinfo);
 }
 
-packet_ *makePkt(char *buffer){
+packet_ *makePkt(char *buffer, Client_info cinfo){
 	packet_ *pkt = (packet_*)malloc(sizeof(packet_));
 	unsigned short int opcode;
-    memcpy(&opcode,buffer,sizeof(short));		//get opcode
+    	memcpy(&opcode,buffer,sizeof(short));		//get opcode
 	opcode = ntohs(opcode);
-    pkt->opcode=opcode;
+    	// pkt->opcode=opcode;		//kj
 	int readptr =2;	//already read 2 bytes
-	switch(pkt->opcode){
-		case(TFTP_RRQ):{		
-			memset(pkt->read_req.filename, '\0',MAX_STRING_SIZE+1);
-			memset(pkt->read_req.mode, '\0',MAX_MODE_SIZE+1);
+	switch(opcode){
+		case(TFTP_RRQ):{
+			// memset(pkt->read_req.filename, '\0',MAX_STRING_SIZE+1);
+			// memset(pkt->read_req.mode, '\0',MAX_MODE_SIZE+1);
+			char filename[MAX_STRING_SIZE];
+			memset(filename, 0, sizeof(filename));
 			int i;
 			for(i = readptr; i<MAX_BUF_SIZE; i++) {		//obtaining filename
 				if(buffer[i] == '\0')
 					break;
-				pkt->read_req.filename[i-readptr] = buffer[i];
+				filename[i-readptr] = buffer[i];
 			}
 			readptr =i+1;
+			char mode[MAX_MODE_SIZE];
+			memset(mode, 0, sizeof(mode));
 			for(i = readptr; i<MAX_BUF_SIZE; i++) {		//obtaining mode
 				if(buffer[i] == '\0')
 					break;
-				pkt->read_req.mode[i-readptr] = buffer[i];
+				mode[i-readptr] = buffer[i];
 			}
-			printf("opcode = %d\nfilename =%s\nmode=%s\n",opcode,pkt->read_req.filename,pkt->read_req.mode);
+			printf("opcode = %d\nfilename =%s\nmode=%s\n", opcode, filename, mode);
+			file_to_pkt(filename, cinfo, pkt, -1);		// this will check if file exists, yes-packet of type DATA, if no then packet of type ERR
 		}
 		break;
 		case(TFTP_WRQ):{
-			
+
 		}
 		break;
 		case(TFTP_DATA):{
@@ -191,7 +196,7 @@ packet_ *makePkt(char *buffer){
 		}
 		break;
 		case(TFTP_ERR):{
-		
+
 		}
 		break;
 	}
@@ -213,10 +218,13 @@ int processClient(Client_info clientHT[], int fd) {
 		printf("Received from different client on fd =%d",fd);
 		return 0;
 	}
-	packet_ *recvd_pkt = makePkt(buffer);	//make the packet
+	packet_ *reply_pkt = makePkt(buffer, cinfo);	//make the reply packet
+	char * reply_string = pkt_to_string(reply_pkt);
+	//sendto(cinfo->fd, replystring);
+
 	//sendReply(); based on the packet received
-	
-	/*	
+
+	/*
 	char opcode[3];
 	strcpy(opcode, buffer);
 	opcode[2] = '\0';
@@ -292,3 +300,23 @@ void sendpkt(Client_info cinfo, packet_ * pkt) {
 
 //takes as input a char* buffer and returns the equivalent packet structure
 
+void file_to_pkt(char filename[MAX_STRING_SIZE], Client_info cinfo, packet_ * pkt, int acknumber) {
+	FILE * fp = fopen(filename, "r");
+	if(fp == NULL) {		// file doesn't exist
+		pkt->opcode = TFTP_ERR;
+		pkt->error.errorCode = 17;	// no such file
+		sprintf(pkt->error.message, "File %s doesn't exist at server!", filename);
+		return pkt;
+	}
+	pkt->opcode = TFTP_DATA;
+	pkt->data.blockNumber = acknumber + 1;
+	int n = fread(pkt->data.data, MAX_DATA_SIZE, 1, fp);
+	if(n == 0) {			// reached the end of file
+		pkt->data.dataSize = strlen(pkt->data.data);
+	}
+	else {
+		pkt->data.dataSize = MAX_DATA_SIZE;
+	}
+	cinfo->fp = fp;
+	cinfo->last_pkt = pkt;
+}
