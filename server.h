@@ -3,11 +3,15 @@
 #include <stdlib.h>
 #include <netinet/in.h>
 #include <sys/types.h>
+#include <ifaddrs.h>
 #include <unistd.h>
 #include <string.h>
 #include <sys/select.h>
 #include <errno.h>
-#include<ctype.h>
+#include <ctype.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <netdb.h>
 
 #define MAX_BUF_SIZE 1024
 #define PAYLOAD_SIZE 512
@@ -82,4 +86,6 @@ void delete(Client_info clientHT[], int fd);
 Client_info create_client(int fd, FILE * fp, struct sockaddr_in * cliaddr);
 int processClient(Client_info clientHT[], int fd);
 void sendpkt(Client_info cinfo, packet_ * pkt);
-packet_ *makePkt(char *buffer, Client_info cinfo);
+packet_ *makePkt(char *buffer, Client_info cinfo,Client_info clientHT[]);
+char *pkt_to_string(packet_* pkt);
+void file_to_pkt(Client_info cinfo, packet_ * pkt, int acknumber);

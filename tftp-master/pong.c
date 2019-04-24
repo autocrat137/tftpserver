@@ -40,7 +40,9 @@ bool send_generic(int sockfd, struct sockaddr* sockInfo, PACKET* packet)
   size_t n;
   char buffer[BUFSIZE];
   n = serializePacket(packet,buffer);
-
+//   for(int i=0;i<30;i++)
+// 	printf("%d=%d\n", i, buffer[i]);
+printf("n=%d\n", n);
   return (sendto(sockfd,buffer,n,0,(struct sockaddr *)sockInfo,sizeof(struct sockaddr)) >= 0);
 }
 
@@ -87,6 +89,7 @@ bool send_error(int sockfd, struct sockaddr* sockInfo, u_int16_t errorCode, char
   packet.optcode = TFTP_OPTCODE_ERR;
   packet.error.errorCode = errorCode;
   strncpy(packet.error.message, error_message,MAX_STRING_SIZE);
+//   strcpy(packet.error.message, error_message);
   return send_generic(sockfd,sockInfo,&packet);
 }
 
